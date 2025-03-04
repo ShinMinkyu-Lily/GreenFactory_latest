@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Minus, Plus, Trash2 } from 'lucide-react';
+import { Minus, Plus, Trash2, BarChart2, Calendar, Info, ChevronUp, ChevronDown } from 'lucide-react';
 
 // 메뉴 카테고리 정의
 const categories = ['카테고리1', '카테고리2', '카테고리3', '카테고리4', '카테고리5', '카테고리6'];
@@ -52,7 +52,34 @@ const menuItems = [
     name: `크로와상 ${i + 1}`,
     price: 3500,
     category: '카테고리6'
-  })),
+  }))
+];
+
+// 매출 데이터 샘플
+const salesData = [
+  { month: 'Jan', value: 750 },
+  { month: 'Feb', value: 700 },
+  { month: 'Mar', value: 950 },
+  { month: 'Apr', value: 920 },
+  { month: 'May', value: 780 },
+  { month: 'Jun', value: 400 },
+  { month: 'Jul', value: 780 },
+  { month: 'Aug', value: 900 },
+  { month: 'Sep', value: 850 },
+  { month: 'Oct', value: 780 },
+  { month: 'Nov', value: 880 },
+  { month: 'Dec', value: 550 }
+];
+
+// 상위 판매자 데이터
+const topSellers = [
+  { id: 1, name: 'Emily Johnson', sales: 242 },
+  { id: 2, name: 'Michael Smith', sales: 234 },
+  { id: 3, name: 'Sophia Williams', sales: 222 },
+  { id: 4, name: 'James Brown', sales: 122 },
+  { id: 5, name: 'Olivia Davis', sales: 111 },
+  { id: 6, name: 'William Anderson', sales: 100 },
+  { id: 7, name: 'Ava Lee', sales: 98 }
 ];
 
 function App() {
@@ -80,6 +107,26 @@ function App() {
     id: number;
     description: string;
     amount: number;
+  }>>([]);
+  const [activeView, setActiveView] = useState<'order' | 'dashboard'>('order');
+  const [dashboardTab, setDashboardTab] = useState<'매출현황' | '매출달력'>('매출현황');
+  const [salesFilter, setSalesFilter] = useState<'어제' | '오늘' | '이번 주' | '이번 달'>('오늘');
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  
+  // 주문 내역 저장소
+  const [completedOrders, setCompletedOrders] = useState<Array<{
+    id: number;
+    items: Array<{
+      id: number;
+      name: string;
+      price: number;
+      quantity: number;
+    }>;
+    totalAmount: number;
+    discount: number;
+    finalAmount: number;
+    paymentMethod: string;
+    timestamp: Date;
   }>>([]);
 
   // 페이지당 아이템 수 - 24개로 변경
@@ -273,7 +320,23 @@ function App() {
   // 주문 처리 함수
   const processOrder = (paymentMethod: string) => {
     // 주문 처리 로직
-    // 여기서는 간단히 주문 목록을 초기화하고 토스트 메시지만 표시
+    const subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const total = Math.max(0, subtotal - discount);
+    
+    // 주문 내역 저장
+    const newOrder = {
+      id: Date.now(),
+      items: [...orderItems],
+      totalAmount: subtotal,
+      discount: discount,
+      finalAmount: total,
+      paymentMethod: paymentMethod,
+      timestamp: new Date()
+    };
+    
+    setCompletedOrders(prev => [...prev, newOrder]);
+    
+    // 주문 목록 초기화
     setOrderItems([]);
     setDiscount(0);
     
@@ -300,228 +363,664 @@ function App() {
     hour12: false
   });
 
+  // 매출 데이터 최대값 계산 (차트 스케일링용)
+  const maxSalesValue = Math.max(...salesData.map(item => item.value));
+
+  // 현재 날짜 가져오기
+  const today = new Date();
+  const formattedToday = today.toISOString().split('T')[0];
+  
+  // 날짜 비교 함수 (같은 날짜인지 확인)
+  const isSameDay = (date1: Date, date2: Date) => {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  };
+  
+  // 날짜가 같은 주에 있는지 확인
+  const isSameWeek = (date1: Date, date2: Date) => {
+    const oneDay = 24 * 60 * 60 * 1000;
+    const firstDayOfWeek = new Date(date2.getTime() - date2.getDay() * oneDay);
+    const lastDayOfWeek = new Date(firstDayOfWeek.getTime() + 6 * oneDay);
+    
+    return date1 >= firstDayOfWeek && date1 <= lastDayOfWeek;
+  };
+  
+  // 날짜가 같은 달에 있는지 확인
+  const isSameMonth = (date1: Date, date2: Date) => {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth()
+    );
+  };
+  
+  // 어제 날짜 계산
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  // 매출 데이터 필터링 함수
+  const getFilteredSalesData = () => {
+    // 필터에 따라 주문 데이터 필터링
+    let filteredOrders = [];
+    let comparisonOrdersList = [];
+    
+    switch (salesFilter) {
+      case '어제':
+        filteredOrders = completedOrders.filter(order => 
+          isSameDay(order.timestamp, yesterday)
+        );
+        
+        // 이틀 전 데이터 (비교용)
+        const twoDaysAgo = new Date(today);
+        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+        comparisonOrdersList = completedOrders.filter(order => 
+          isSameDay(order.timestamp, twoDaysAgo)
+        );
+        break;
+        
+      case '오늘':
+        filteredOrders = completedOrders.filter(order => 
+          isSameDay(order.timestamp, today)
+        );
+        
+        // 어제 데이터 (비교용)
+        comparisonOrdersList = completedOrders.filter(order => 
+          isSameDay(order.timestamp, yesterday)
+        );
+        break;
+        
+      case '이번 주':
+        filteredOrders = completedOrders.filter(order => 
+          isSameWeek(order.timestamp, today)
+        );
+        
+        // 지난 주 데이터 (비교용)
+        const lastWeekStart = new Date(today);
+        lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+        comparisonOrdersList = completedOrders.filter(order => 
+          isSameWeek(order.timestamp, lastWeekStart)
+        );
+        break;
+        
+      case '이번 달':
+        filteredOrders = completedOrders.filter(order => 
+          isSameMonth(order.timestamp, today)
+        );
+        
+        // 지난 달 데이터 (비교용)
+        const lastMonth = new Date(today);
+        lastMonth.setMonth(lastMonth.getMonth() - 1);
+        comparisonOrdersList = completedOrders.filter(order => 
+          isSameMonth(order.timestamp, lastMonth)
+        );
+        break;
+        
+      default:
+        filteredOrders = completedOrders.filter(order => 
+          isSameDay(order.timestamp, today)
+        );
+        comparisonOrdersList = completedOrders.filter(order => 
+          isSameDay(order.timestamp, yesterday)
+        );
+    }
+    
+    // 매출 계산
+    const sales = filteredOrders.reduce((sum, order) => sum + order.finalAmount, 0);
+    const comparisonSales = comparisonOrdersList.reduce((sum, order) => sum + order.finalAmount, 0);
+    const salesDiff = sales - comparisonSales;
+    
+    // 주문 건수
+    const orders = filteredOrders.length;
+    const comparisonOrdersCount = comparisonOrdersList.length;
+    const ordersDiff = orders - comparisonOrdersCount;
+    
+    // 재고 소진율 (실제로는 판매된 상품 수량을 기준으로 계산해야 함)
+    // 여기서는 간단히 주문 건수 대비 판매된 상품 수량으로 계산
+    const totalItems = filteredOrders.reduce((sum, order) => 
+      sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+    
+    const comparisonTotalItems = comparisonOrdersList.reduce((sum, order) => 
+      sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+    
+    // 재고 소진율 계산 (예시: 전체 메뉴 아이템 중 판매된 비율)
+    // 실제로는 초기 재고량 대비 판매량으로 계산해야 함
+    const totalMenuItems = menuItems.length;
+    const inventory = totalItems > 0 ? Math.min(Math.round((totalItems / totalMenuItems) * 100), 100) : 0;
+    const comparisonInventory = comparisonTotalItems > 0 ? 
+      Math.min(Math.round((comparisonTotalItems / totalMenuItems) * 100), 100) : 0;
+    const inventoryDiff = inventory - comparisonInventory;
+    
+    return {
+      sales,
+      inventory,
+      orders,
+      comparison: { 
+        sales: salesDiff, 
+        inventory: inventoryDiff, 
+        orders: ordersDiff 
+      }
+    };
+  };
+
+  // 필터링된 데이터 가져오기
+  const filteredData = getFilteredSalesData();
+  
+  // 데이터가 있는지 확인
+  const hasData = completedOrders.length > 0;
+
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* 상단 바 */}
       <div className="bg-slate-800 text-white p-4 flex justify-center">
         <div className="flex space-x-8">
-          <button className="px-6 py-2 bg-slate-700 rounded-md">주문</button>
-          <button className="px-6 py-2">현황</button>
+          <button 
+            className={`px-6 py-2 ${activeView === 'order' ? 'bg-slate-700 rounded-md' : ''}`}
+            onClick={() => setActiveView('order')}
+          >
+            주문
+          </button>
+          <button 
+            className={`px-6 py-2 ${activeView === 'dashboard' ? 'bg-slate-700 rounded-md' : ''}`}
+            onClick={() => setActiveView('dashboard')}
+          >
+            현황
+          </button>
         </div>
       </div>
 
-      {/* 메인 콘텐츠 */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* 왼쪽 메뉴 영역 */}
-        <div className="w-3/4 flex flex-col">
-          {/* 카테고리 탭 */}
-          <div className="flex overflow-x-auto bg-white border-b">
-            {categories.map((category, index) => (
-              <button
-                key={category}
-                className={`px-6 py-4 whitespace-nowrap font-medium ${
-                  activeCategory === category 
-                    ? 'text-blue-600 border-b-2 border-blue-600' 
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-                onClick={() => {
-                  setActiveCategory(category);
-                  setCurrentPage(1);
-                }}
-              >
-                {category}
-                {index === 0 && <div className="absolute bottom-0 left-0 w-full h-1 bg-blue-600"></div>}
-              </button>
-            ))}
-          </div>
-
-          {/* 메뉴 그리드 - 24개 아이템을 보여주기 위해 그리드 조정 */}
-          <div className="grid grid-cols-6 gap-2 p-4 overflow-y-auto flex-1">
-            {currentItems.map(item => (
-              <button
-                key={item.id}
-                className="bg-white rounded-lg shadow p-2 flex flex-col items-center justify-center h-28 hover:bg-gray-50 transition-colors"
-                onClick={() => addToOrder(item)}
-              >
-                <span className="font-medium text-sm mb-1 text-center">{item.name}</span>
-                <span className="text-gray-600 text-sm">{item.price.toLocaleString()}원</span>
-              </button>
-            ))}
-          </div>
-
-          {/* 페이지네이션 */}
-          <div className="bg-white p-4 border-t flex justify-between items-center">
-            <div className="flex space-x-2">
-              <button 
-                className={`px-4 py-2 rounded-md ${
-                  !isOrderEmpty 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-                onClick={!isOrderEmpty ? openDiscountModal : undefined}
-                disabled={isOrderEmpty}
-              >
-                할인 적용
-              </button>
-              <button 
-                className={`px-4 py-2 rounded-md ${
-                  isOrderEmpty 
-                    ? 'bg-[#FFFBE6] text-amber-800 border border-amber-300' 
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-                onClick={isOrderEmpty ? openExpenseModal : undefined}
-                disabled={!isOrderEmpty}
-              >
-                기타 지출
-              </button>
+      {activeView === 'order' ? (
+        /* 주문 화면 */
+        <div className="flex flex-1 overflow-hidden">
+          {/* 왼쪽 메뉴 영역 */}
+          <div className="w-3/4 flex flex-col">
+            {/* 카테고리 탭 */}
+            <div className="flex overflow-x-auto bg-white border-b">
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  className={`px-6 py-4 whitespace-nowrap font-medium ${
+                    activeCategory === category 
+                      ? 'text-blue-600 border-b-2 border-blue-600' 
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  onClick={() => {
+                    setActiveCategory(category);
+                    setCurrentPage(1);
+                  }}
+                >
+                  {category}
+                </button>
+              ))}
             </div>
-            
-            <div className="flex items-center space-x-2">
-              <button
-                className="w-8 h-8 flex items-center justify-center border rounded-md"
-                onClick={() => changePage(currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                &lt;
-              </button>
-              <span className="px-2">{currentPage}</span>
-              <button
-                className="w-8 h-8 flex items-center justify-center border rounded-md"
-                onClick={() => changePage(currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
-                &gt;
-              </button>
+
+            {/* 메뉴 그리드 - 24개 아이템을 보여주기 위해 그리드 조정 */}
+            <div className="grid grid-cols-6 gap-2 p-4 overflow-y-auto flex-1">
+              {currentItems.map(item => (
+                <button
+                  key={item.id}
+                  className="bg-white rounded-lg shadow p-2 flex flex-col items-center justify-center h-28 hover:bg-gray-50 transition-colors"
+                  onClick={() => addToOrder(item)}
+                >
+                  <span className="font-medium text-sm mb-1 text-center">{item.name}</span>
+                  <span className="text-gray-600 text-sm">{item.price.toLocaleString()}원</span>
+                </button>
+              ))}
+            </div>
+
+            {/* 페이지네이션 */}
+            <div className="bg-white p-4 border-t flex justify-between items-center">
+              <div className="flex space-x-2">
+                <button 
+                  className={`px-4 py-2 rounded-md ${
+                    !isOrderEmpty 
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                  onClick={!isOrderEmpty ? openDiscountModal : undefined}
+                  disabled={isOrderEmpty}
+                >
+                  할인 적용
+                </button>
+                <button 
+                  className={`px-4 py-2 rounded-md ${
+                    isOrderEmpty 
+                      ? 'bg-[#FFFBE6] text-[#FF8F1F] border border-[#EEEEEE]' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                  onClick={isOrderEmpty ? openExpenseModal : undefined}
+                  disabled={!isOrderEmpty}
+                >
+                  기타 지출
+                </button>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <button
+                  className="w-8 h-8 flex items-center justify-center border rounded-md"
+                  onClick={() => changePage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  &lt;
+                </button>
+                <span className="px-2">{currentPage}</span>
+                <button
+                  className="w-8 h-8 flex items-center justify-center border rounded-md"
+                  onClick={() => changePage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  &gt;
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* 오른쪽 주문 영역 */}
-        <div className="w-1/4 bg-white border-l flex flex-col">
-          {/* 주문 목록 헤더 - 시간과 금액 표시 */}
-          <div className="p-3 border-b flex justify-between items-center bg-gray-50">
-            <span>{currentDateTime}</span>
-            <span className="font-bold">{subtotal.toLocaleString()}원</span>
-          </div>
+          {/* 오른쪽 주문 영역 */}
+          <div className="w-1/4 bg-white border-l flex flex-col">
+            {/* 주문 목록 헤더 - 시간과 금액 표시 */}
+            <div className="p-3 border-b flex justify-between items-center bg-gray-50">
+              <span>{currentDateTime}</span>
+              <span className="font-bold">{subtotal.toLocaleString()}원</span>
+            </div>
 
-          {/* 주문 아이템 목록 */}
-          <div className="flex-1 overflow-y-auto">
-            {isOrderEmpty ? (
-              <>
-                {/* 지출 항목 표시 */}
-                {expenses.length > 0 ? (
-                  expenses.map(expense => (
-                    <div key={expense.id} className="p-3 border-b bg-blue-50">
+            {/* 주문 아이템 목록 */}
+            <div className="flex-1 overflow-y-auto">
+              {isOrderEmpty ? (
+                <>
+                  {/* 지출 항목 표시 */}
+                  {expenses.length > 0 ? (
+                    expenses.map(expense => (
+                      <div key={expense.id} className="p-3 border-b bg-blue-50">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center">
+                            <span className="font-medium">{expense.description}</span>
+                          </div>
+                          <button 
+                            className="w-8 h-8 flex items-center justify-center bg-red-500 text-white rounded-md"
+                            onClick={() => handleExpenseDeleteClick(expense.id)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                        <div className="flex justify-end">
+                          <span className="text-right">(-) {expense.amount.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-gray-500 text-center">주문서가 비어있습니다</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {orderItems.map(item => (
+                    <div key={item.id} className="p-3 border-b bg-blue-50">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center">
-                          <span className="font-medium">{expense.description}</span>
+                          <button 
+                            className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded-l-md"
+                            onClick={() => updateQuantity(item.id, -1)}
+                          >
+                            <Minus size={16} />
+                          </button>
+                          <span className="w-8 h-8 flex items-center justify-center bg-white border-t border-b border-gray-300">
+                            {item.quantity}
+                          </span>
+                          <button 
+                            className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded-r-md"
+                            onClick={() => updateQuantity(item.id, 1)}
+                          >
+                            <Plus size={16} />
+                          </button>
                         </div>
                         <button 
                           className="w-8 h-8 flex items-center justify-center bg-red-500 text-white rounded-md"
-                          onClick={() => handleExpenseDeleteClick(expense.id)}
+                          onClick={() => handleDeleteClick(item.id)}
                         >
                           <Trash2 size={16} />
                         </button>
                       </div>
-                      <div className="flex justify-end">
-                        <span className="text-right">(-) {expense.amount.toLocaleString()}</span>
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">{item.name}×{item.quantity}</span>
+                        <span className="text-right">{(item.price * item.quantity).toLocaleString()}</span>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-gray-500 text-center">주문서가 비어있습니다</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                {orderItems.map(item => (
-                  <div key={item.id} className="p-3 border-b bg-blue-50">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center">
-                        <button 
-                          className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded-l-md"
-                          onClick={() => updateQuantity(item.id, -1)}
-                        >
-                          <Minus size={16} />
-                        </button>
-                        <span className="w-8 h-8 flex items-center justify-center bg-white border-t border-b border-gray-300">
-                          {item.quantity}
-                        </span>
-                        <button 
-                          className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded-r-md"
-                          onClick={() => updateQuantity(item.id, 1)}
-                        >
-                          <Plus size={16} />
-                        </button>
+                  ))}
+                  
+                  {/* 할인 정보 - 빨간색으로 표시 */}
+                  {discount > 0 && (
+                    <div className="p-3 border-b">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium text-red-500">할인</span>
+                        <span className="text-red-500">(-) {discount.toLocaleString()}</span>
                       </div>
-                      <button 
-                        className="w-8 h-8 flex items-center justify-center bg-red-500 text-white rounded-md"
-                        onClick={() => handleDeleteClick(item.id)}
-                      >
-                        <Trash2 size={16} />
-                      </button>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">{item.name}×{item.quantity}</span>
-                      <span className="text-right">{(item.price * item.quantity).toLocaleString()}</span>
-                    </div>
-                  </div>
-                ))}
-                
-                {/* 할인 정보 - 빨간색으로 표시 */}
-                {discount > 0 && (
-                  <div className="p-3 border-b">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-red-500">할인</span>
-                      <span className="text-red-500">(-) {discount.toLocaleString()}</span>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+                  )}
+                </>
+              )}
+            </div>
 
-          {/* 결제 버튼 영역 */}
-          <div className="border-t p-3">
-            <div className="grid grid-cols-3 gap-2 mb-3">
+            {/* 결제 버튼 영역 */}
+            <div className="border-t p-3">
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <button 
+                  className="bg-blue-100 text-blue-700 py-2 rounded-md text-sm"
+                  onClick={() => processOrder('현금')}
+                  disabled={isOrderEmpty}
+                >
+                  현금
+                </button>
+                <button 
+                  className="bg-blue-100 text-blue-700 py-2 rounded-md text-sm"
+                  onClick={() => processOrder('계좌이체')}
+                  disabled={isOrderEmpty}
+                >
+                  계좌이체
+                </button>
+                <button 
+                  className="bg-blue-100 text-blue-700 py-2 rounded-md text-sm"
+                  onClick={() => processOrder('외상')}
+                  disabled={isOrderEmpty}
+                >
+                  외상
+                </button>
+              </div>
+              
+              {/* 총액 */}
               <button 
-                className="bg-blue-100 text-blue-700 py-2 rounded-md text-sm"
-                onClick={() => processOrder('현금')}
+                className="w-full bg-blue-600 text-white py-3 rounded-md font-medium"
+                onClick={() => processOrder('카드')}
                 disabled={isOrderEmpty}
               >
-                현금
-              </button>
-              <button 
-                className="bg-blue-100 text-blue-700 py-2 rounded-md text-sm"
-                onClick={() => processOrder('계좌이체')}
-                disabled={isOrderEmpty}
-              >
-                계좌이체
-              </button>
-              <button 
-                className="bg-blue-100 text-blue-700 py-2 rounded-md text-sm"
-                onClick={() => processOrder('외상')}
-                disabled={isOrderEmpty}
-              >
-                외상
+                {isOrderEmpty && expenses.length > 0 
+                  ? `(-) ${totalExpenses.toLocaleString()}원 지출 등록` 
+                  : `${total.toLocaleString()}원 카드 주문`}
               </button>
             </div>
-            
-            {/* 총액 */}
-            <button 
-              className="w-full bg-blue-600 text-white py-3 rounded-md font-medium"
-              onClick={() => processOrder('카드')}
-              disabled={isOrderEmpty}
-            >
-              {isOrderEmpty && expenses.length > 0 
-                ? `(-) ${totalExpenses.toLocaleString()}원 지출 등록` 
-                : `${total.toLocaleString()}원 카드 주문`}
-            </button>
           </div>
         </div>
-      </div>
+      ) : (
+        /* 대시보드 화면 */
+        <div className="flex flex-1 overflow-hidden">
+          {/* 왼쪽 사이드바 */}
+          <div className="w-64 bg-white border-r flex flex-col">
+            <div className="p-4 flex items-center">
+              <BarChart2 className="text-blue-500 mr-2" size={20} />
+              <span className="font-medium text-lg">현황</span>
+            </div>
+            
+            {/* 대시보드 메뉴 */}
+            <div className="flex-1">
+              <div className="border-b">
+                <button 
+                  className={`w-full text-left p-4 ${dashboardTab === '매출현황' ? 'bg-blue-50 text-blue-600' : 'text-gray-700'}`}
+                  onClick={() => setDashboardTab('매출현황')}
+                >
+                  매출현황
+                </button>
+                <button 
+                  className={`w-full text-left p-4 ${dashboardTab === '매출달력' ? 'bg-blue-50 text-blue-600' : 'text-gray-700'}`}
+                  onClick={() => setDashboardTab('매출달력')}
+                >
+                  매출달력
+                </button>
+              </div>
+              
+              {/* 카테고리 목록 */}
+              <div className="p-4 border-b">
+                <div className="flex items-center mb-3">
+                  <span className="text-gray-500 text-sm">상품 관리</span>
+                </div>
+                <button className="w-full text-left py-2 text-gray-700">
+                  상품
+                </button>
+              </div>
+              
+              <div className="p-4">
+                <div className="flex items-center mb-3">
+                  <span className="text-gray-500 text-sm">카테고리</span>
+                </div>
+                {categories.map(category => (
+                  <button 
+                    key={category}
+                    className="w-full text-left py-2 text-gray-700"
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          {/* 오른쪽 콘텐츠 영역 */}
+          <div className="flex-1 overflow-y-auto">
+            {/* 상단 경로 표시 */}
+            <div className="bg-white p-4 border-b">
+              <div className="flex items-center text-sm text-gray-500">
+                <span>현황</span>
+                <span className="mx-2">/</span>
+                <span className="text-gray-700">{dashboardTab}</span>
+              </div>
+            </div>
+            
+            {/* 대시보드 콘텐츠 */}
+            <div className="p-6">
+              <h1 className="text-2xl font-bold mb-6">{dashboardTab}</h1>
+              
+              {dashboardTab === '매출현황' && (
+                <>
+                  {/* 필터 버튼 */}
+                  <div className="flex mb-6 space-x-2">
+                    {(['어제', '오늘', '이번 주', '이번 달'] as const).map((filter) => (
+                      <button
+                        key={filter}
+                        className={`px-4 py-2 rounded-md ${
+                          salesFilter === filter 
+                            ? 'bg-blue-500 text-white' 
+                            : 'bg-white text-gray-700 border'
+                        }`}
+                        onClick={() => setSalesFilter(filter)}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                    
+                    {/* 날짜 선택 */}
+                    <div className="ml-auto">
+                      <input
+                        type="date"
+                        className="px-4 py-2 border rounded-md"
+                        value={selectedDate || formattedToday}
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        max={formattedToday}
+                        min={new Date(today.getFullYear() - 1, today.getMonth(), today.getDate()).toISOString().split('T')[0]}
+                      />
+                    </div>
+                  </div>
+                  
+                  {hasData ? (
+                    <>
+                      {/* 통계 카드 */}
+                      <div className="grid grid-cols-3 gap-6 mb-8">
+                        {/* 매출 카드 */}
+                        <div className="bg-white rounded-lg shadow p-6">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-gray-500">매출</span>
+                            <Info size={18} className="text-gray-400" />
+                          </div>
+                          <div className="text-3xl font-bold mb-2">
+                            {filteredData.sales.toLocaleString()}원
+                          </div>
+                          <div className="flex items-center text-sm">
+                            <span className="text-gray-500 mr-2">이전 기간 대비</span>
+                            <div className={`flex items-center ${filteredData.comparison.sales >= 0 ? 'text-red-500' : 'text-blue-500'}`}>
+                              {filteredData.comparison.sales >= 0 ? (
+                                <ChevronUp size={16} />
+                              ) : (
+                                <ChevronDown size={16} />
+                              )}
+                              <span>{Math.abs(filteredData.comparison.sales).toLocaleString()}원</span>
+                            </div>
+                          </div>
+                          <div className="text-gray-500 text-sm mt-4">
+                            손익: {Math.round(filteredData.sales * 0.3).toLocaleString()}원
+                          </div>
+                        </div>
+                        
+                        {/* 재고 소진율 카드 */}
+                        <div className="bg-white rounded-lg shadow p-6">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-gray-500">재고 소진율</span>
+                            <Info size={18} className="text-gray-400" />
+                          </div>
+                          <div className="text-3xl font-bold mb-2">
+                            {filteredData.inventory}%
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                            <div 
+                              className="bg-blue-500 h-2.5 rounded-full" 
+                              style={{ width: `${filteredData.inventory}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex items-center text-sm">
+                            <span className="text-gray-500 mr-2">이전 기간 대비</span>
+                            <div className={`flex items-center ${filteredData.comparison.inventory >= 0 ? 'text-red-500' : 'text-blue-500'}`}>
+                              {filteredData.comparison.inventory >= 0 ? (
+                                <ChevronUp size={16} />
+                              ) : (
+                                <ChevronDown size={16} />
+                              )}
+                              <span>{Math.abs(filteredData.comparison.inventory)}%</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* 주문건 카드 */}
+                        <div className="bg-white rounded-lg shadow p-6">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-gray-500">주문건</span>
+                            <Info size={18} className="text-gray-400" />
+                          </div>
+                          <div className="text-3xl font-bold mb-2">
+                            {filteredData.orders}건
+                          </div>
+                          <div className="flex items-center text-sm">
+                            <span className="text-gray-500 mr-2">이전 기간 대비</span>
+                            <div className={`flex items-center ${filteredData.comparison.orders >= 0 ? 'text-green-500' : 'text-blue-500'}`}>
+                              {filteredData.comparison.orders >= 0 ? (
+                                <ChevronUp size={16} />
+                              ) : (
+                                <ChevronDown size={16} />
+                              )}
+                              <span>{Math.abs(filteredData.comparison.orders)}건</span>
+                            </div>
+                          </div>
+                          {filteredData.orders > 0 && (
+                            <div className="text-gray-500 text-sm mt-4">
+                              평균 주문액: {Math.round(filteredData.sales / filteredData.orders).toLocaleString()}원
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="bg-white rounded-lg shadow p-10 text-center mb-8">
+                      <div className="text-gray-400 text-lg mb-2">데이터가 없습니다</div>
+                      <p className="text-gray-500">주문을 처리하면 매출 현황이 여기에 표시됩니다.</p>
+                    </div>
+                  )}
+                  
+                  {/* 연간 매출 차트 */}
+                  <div className="bg-white rounded-lg shadow p-6 mb-6">
+                    <h2 className="text-xl font-bold mb-4">연간 매출</h2>
+                    
+                    {hasData ? (
+                      <div className="relative h-80">
+                        {/* Y축 레이블 */}
+                        <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-gray-500 text-sm">
+                          <span>1200</span>
+                          <span>900</span>
+                          <span>600</span>
+                          <span>300</span>
+                          <span>0</span>
+                        </div>
+                        
+                        {/* 차트 영역 */}
+                        <div className="ml-10 h-full flex items-end">
+                          <div className="flex-1 flex items-end justify-between h-64">
+                            {salesData.map((item, index) => (
+                              <div key={index} className="flex flex-col items-center">
+                                <div 
+                                  className="w-12 bg-blue-500 rounded-sm" 
+                                  style={{ 
+                                    height: `${(item.value / 1200) * 100}%`,
+                                    minHeight: '4px'
+                                  }}
+                                ></div>
+                                <span className="text-xs text-gray-500 mt-2">{item.month}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-64">
+                        <p className="text-gray-400">데이터가 없습니다</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* 상품 주문건수 순위 */}
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <h2 className="text-xl font-bold mb-4">상품 주문건수 순위</h2>
+                    
+                    <div className="overflow-hidden">
+                      <div className="flex justify-between text-gray-500 text-sm mb-2 px-4">
+                        <span>상품 주문건수 순위</span>
+                        <span>주문건수</span>
+                      </div>
+                      
+                      {hasData && topSellers.length > 0 ? (
+                        <div className="space-y-4">
+                          {topSellers.map((seller, index) => (
+                            <div key={seller.id} className="flex items-center justify-between">
+                              <div className="flex items-center">
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center mr-3 ${
+                                  index < 3 ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+                                }`}>
+                                  {index + 1}
+                                </div>
+                                <span>{seller.name}</span>
+                              </div>
+                              <span className="font-medium">{seller.sales}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center text-gray-400 py-8">
+                          데이터가 없습니다
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+              
+              {dashboardTab === '매출달력' && (
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h2 className="text-xl font-bold mb-4">매출 달력</h2>
+                  <div className="text-center text-gray-500 py-8">
+                    매출 달력 기능은 준비 중입니다
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 삭제 확인 모달 */}
       {showDeleteConfirmation && (
@@ -535,8 +1034,7 @@ function App() {
               <div className="grid grid-cols-1 gap-3">
                 <button
                   className="w-full py-3 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors"
-                  onClick={removeItem}
-                >
+                  onClick={removeItem} >
                   {itemToDelete !== null ? "상품 삭제" : "지출 항목 삭제"}
                 </button>
                 <button
