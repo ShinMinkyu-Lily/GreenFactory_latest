@@ -113,6 +113,16 @@ function App() {
   const [salesFilter, setSalesFilter] = useState<'어제' | '오늘' | '이번 주' | '이번 달'>('오늘');
   const [selectedDate, setSelectedDate] = useState<string>('');
   
+  // 달력 관련 상태
+  const [calendarView, setCalendarView] = useState<'Month' | 'Year'>('Month');
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarDateFilter, setCalendarDateFilter] = useState<'어제' | '오늘' | '이번 주' | '이번 달'>('오늘');
+  const [showYearSelector, setShowYearSelector] = useState(false);
+  const [showMonthSelector, setShowMonthSelector] = useState(false);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null);
+  const [showDayDetails, setShowDayDetails] = useState(false);
+  
   // 주문 내역 저장소
   const [completedOrders, setCompletedOrders] = useState<Array<{
     id: number;
@@ -509,6 +519,99 @@ function App() {
   
   // 데이터가 있는지 확인
   const hasData = completedOrders.length > 0;
+  
+  // 달력 관련 함수 및 데이터
+  const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+  const weekdayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  
+  // 연도 범위 생성 (현재 연도 기준 ±5년)
+  const yearRange = Array.from({ length: 11 }, (_, i) => today.getFullYear() - 5 + i);
+  
+  // 연도 선택기 토글
+  const toggleYearSelector = () => {
+    setShowYearSelector(!showYearSelector);
+    setShowMonthSelector(false);
+  };
+  
+  // 월 선택기 토글
+  const toggleMonthSelector = () => {
+    setShowMonthSelector(!showMonthSelector);
+    setShowYearSelector(false);
+  };
+  
+  // 연도 선택 처리
+  const handleYearSelect = (year: number) => {
+    setCalendarYear(year);
+    setShowYearSelector(false);
+  };
+  
+  // 월 선택 처리
+  const handleMonthSelect = (month: number) => {
+    setCalendarMonth(month);
+    setShowMonthSelector(false);
+  };
+  
+  // 달력 주 계산
+  const getCalendarWeeks = () => {
+    const firstDayOfMonth = new Date(calendarYear, calendarMonth, 1);
+    const lastDayOfMonth = new Date(calendarYear, calendarMonth + 1, 0);
+    
+    // 첫 주의 시작일 (이전 달의 날짜 포함)
+    const startDate = new Date(firstDayOfMonth);
+    startDate.setDate(startDate.getDate() - startDate.getDay());
+    
+    // 마지막 주의 종료일 (다음 달의 날짜 포함)
+    const endDate = new Date(lastDayOfMonth);
+    endDate.setDate(endDate.getDate() + (6 - endDate.getDay()));
+    
+    const weeks = [];
+    let currentDate = new Date(startDate);
+    
+    while (currentDate <= endDate) {
+      const week = [];
+      
+      for (let i = 0; i < 7; i++) {
+        week.push({
+          date: new Date(currentDate),
+          day: currentDate.getDate(),
+          isCurrentMonth: currentDate.getMonth() === calendarMonth,
+          isToday: isSameDay(currentDate, today)
+        });
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      weeks.push(week);
+    }
+    
+    return weeks;
+  };
+  
+  const calendarWeeks = getCalendarWeeks();
+  
+  // 날짜 클릭 처리
+  const handleDateClick = (date: Date) => {
+    setSelectedCalendarDate(date);
+    setShowDayDetails(true);
+  };
+  
+  // 날짜 상세 정보 닫기
+  const closeDayDetails = () => {
+    setShowDayDetails(false);
+  };
+  
+  // 특정 날짜의 매출 데이터 가져오기
+  const getDaySalesData = (date: Date) => {
+    const dayOrders = completedOrders.filter(order => isSameDay(order.timestamp, date));
+    const sales = dayOrders.reduce((sum, order) => sum + order.finalAmount, 0);
+    
+    return {
+      date,
+      sales,
+      orderCount: dayOrders.length,
+      orders: dayOrders
+    };
+  };
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
@@ -939,8 +1042,7 @@ function App() {
                     
                     {hasData ? (
                       <div className="relative h-80">
-                        {/* Y축 레이블 */}
-                        <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-gray-500 text-sm">
+                        {/* Y축 레이블 */} <div className="absolute left-0 top-0 h-full flex flex-col justify-between text-gray-500 text-sm">
                           <span>1200</span>
                           <span>900</span>
                           <span>600</span>
@@ -1011,10 +1113,348 @@ function App() {
               
               {dashboardTab === '매출달력' && (
                 <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold mb-4">매출 달력</h2>
-                  <div className="text-center text-gray-500 py-8">
-                    매출 달력 기능은 준비 중입니다
+                  {/* 필터 버튼 */}
+                  <div className="flex mb-6 space-x-2">
+                    {(['어제', '오늘', '이번 주', '이번 달'] as const).map((filter) => (
+                      <button
+                        key={filter}
+                        className={`px-4 py-2 rounded-md ${
+                          calendarDateFilter === filter 
+                            ? 'bg-blue-500 text-white' 
+                            : 'bg-white text-gray-700 border'
+                        }`}
+                        onClick={() => setCalendarDateFilter(filter)}
+                      >
+                        {filter}
+                      </button>
+                    ))}
                   </div>
+                  
+                  {/* 달력 헤더 - 년월 선택 및 뷰 선택 */}
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center">
+                      <button 
+                        className="p-1 rounded-full hover:bg-gray-100"
+                        onClick={() => {
+                          if (calendarView === 'Month') {
+                            if (calendarMonth === 0) {
+                              setCalendarYear(calendarYear - 1);
+                              setCalendarMonth(11);
+                            } else {
+                              setCalendarMonth(calendarMonth - 1);
+                            }
+                          } else {
+                            setCalendarYear(calendarYear - 1);
+                          }
+                        }}
+                      >
+                        &lt;
+                      </button>
+                      
+                      {/* 연도 선택 */}
+                      <div className="relative mx-2">
+                        <button 
+                          className="px-2 py-1 font-medium hover:bg-gray-100 rounded"
+                          onClick={toggleYearSelector}
+                        >
+                          {calendarYear}
+                        </button>
+                        
+                        {showYearSelector && (
+                          <div className="absolute top-full left-0 mt-1 bg-white border rounded-md shadow-lg z-10 w-48 max-h-60 overflow-y-auto">
+                            <div className="grid grid-cols-3 gap-1 p-2">
+                              {yearRange.map(year => (
+                                <button
+                                  key={year}
+                                  className={`p-2 text-center rounded ${
+                                    year === calendarYear ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'
+                                  }`}
+                                  onClick={() => handleYearSelect(year)}
+                                >
+                                  {year}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {calendarView === 'Month' && (
+                        <>
+                          {/* 월 선택 */}
+                          <div className="relative mx-2">
+                            <button 
+                              className="px-2 py-1 font-medium hover:bg-gray-100 rounded"
+                              onClick={toggleMonthSelector}
+                            >
+                              {monthNames[calendarMonth]}
+                            </button>
+                            
+                            {showMonthSelector && (
+                              <div className="absolute top-full left-0 mt-1 bg-white border rounded-md shadow-lg z-10 w-48">
+                                <div className="grid grid-cols-3 gap-1 p-2">
+                                  {monthNames.map((month, index) => (
+                                    <button
+                                      key={month}
+                                      className={`p-2 text-center rounded ${
+                                        index === calendarMonth ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'
+                                      }`}
+                                      onClick={() => handleMonthSelect(index)}
+                                    >
+                                      {month}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      
+                      <button 
+                        className="p-1 rounded-full hover:bg-gray-100"
+                        onClick={() => {
+                          if (calendarView === 'Month') {
+                            if (calendarMonth === 11) {
+                              setCalendarYear(calendarYear + 1);
+                              setCalendarMonth(0);
+                            } else {
+                              setCalendarMonth(calendarMonth + 1);
+                            }
+                          } else {
+                            setCalendarYear(calendarYear + 1);
+                          }
+                        }}
+                      >
+                        &gt;
+                      </button>
+                    </div>
+                    
+                    {/* 달력 뷰 선택 */}
+                    <div className="flex rounded-md overflow-hidden">
+                      <button 
+                        className={`px-4 py-2 ${calendarView === 'Month' ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 border'}`}
+                        onClick={() => setCalendarView('Month')}
+                      >
+                        Month
+                      </button>
+                      <button 
+                        className={`px-4 py-2 ${calendarView === 'Year' ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 border'}`}
+                        onClick={() => setCalendarView('Year')}
+                      >
+                        Year
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {calendarView === 'Month' ? (
+                    /* 월별 달력 */
+                    <div className="border rounded-lg overflow-hidden">
+                      {/* 요일 헤더 */}
+                      <div className="grid grid-cols-7 bg-gray-50 border-b">
+                        {weekdayNames.map(day => (
+                          <div key={day} className="p-2 text-center font-medium text-gray-500">
+                            {day}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* 날짜 그리드 */}
+                      <div className="divide-y">
+                        {calendarWeeks.map((week, weekIndex) => (
+                          <div key={weekIndex} className="grid grid-cols-7 divide-x">
+                            {week.map((day, dayIndex) => {
+                              // 해당 날짜의 주문 데이터 가져오기
+                              const dayData = getDaySalesData(day.date);
+                              const hasSales = dayData.orderCount > 0;
+                              
+                              return (
+                                <div 
+                                  key={dayIndex} 
+                                  className={`min-h-[80px] p-2 ${
+                                    day.isCurrentMonth 
+                                      ? day.isToday 
+                                        ? 'bg-blue-50' 
+                                        : 'bg-white' 
+                                      : 'bg-gray-50 text-gray-400'
+                                  } ${
+                                    selectedCalendarDate && isSameDay(day.date, selectedCalendarDate)
+                                      ? 'ring-2 ring-blue-500 ring-inset'
+                                      : ''
+                                  } hover:bg-blue-50 cursor-pointer`}
+                                  onClick={() => handleDateClick(day.date)}
+                                >
+                                  <div className="flex justify-between items-start">
+                                    <span className={`inline-block w-6 h-6 text-center ${
+                                      day.isToday ? 'bg-blue-500 text-white rounded-full' : ''
+                                    }`}>
+                                      {day.day}
+                                    </span>
+                                    
+                                    {hasSales && (
+                                      <span className="text-xs font-medium text-blue-600">
+                                        {dayData.orderCount}건
+                                      </span>
+                                    )}
+                                  </div>
+                                  
+                                  {hasSales && (
+                                    <div className="mt-1 text-xs text-gray-700 font-medium">
+                                      {dayData.sales.toLocaleString()}원
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    /* 연도별 달력 */
+                    <div className="grid grid-cols-4 gap-4">
+                      {monthNames.map((month, index) => {
+                        // 해당 월의 첫날과 마지막 날
+                        const firstDay = new Date(calendarYear, index, 1);
+                        const lastDay = new Date(calendarYear, index + 1, 0);
+                        
+                        // 해당 월의 주문 데이터 계산
+                        const monthOrders = completedOrders.filter(order => 
+                          order.timestamp >= firstDay && order.timestamp <= lastDay
+                        );
+                        
+                        const monthSales = monthOrders.reduce((sum, order) => sum + order.finalAmount, 0);
+                        const orderCount = monthOrders.length;
+                        
+                        const isCurrentMonth = 
+                          today.getFullYear() === calendarYear && 
+                          today.getMonth() === index;
+                        
+                        return (
+                          <div 
+                            key={month} 
+                            className={`border rounded-lg p-4 ${
+                              isCurrentMonth ? 'bg-blue-50 border-blue-200' : 'bg-white'
+                            } hover:bg-blue-50 cursor-pointer`}
+                            onClick={() => {
+                              setCalendarMonth(index);
+                              setCalendarView('Month');
+                            }}
+                          >
+                            <div className="font-medium mb-2">{month}</div>
+                            
+                            {orderCount > 0 ? (
+                              <>
+                                <div className="text-sm text-gray-500">
+                                  {orderCount}건의 주문
+                                </div>
+                                <div className="text-sm font-medium mt-1">
+                                  {monthSales.toLocaleString()}원
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-sm text-gray-400">
+                                데이터 없음
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  
+                  {/* 날짜 상세 정보 모달 */}
+                  {showDayDetails && selectedCalendarDate && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-4">
+                        <div className="p-6">
+                          <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold">
+                              {selectedCalendarDate.toLocaleDateString('ko-KR', { 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric',
+                                weekday: 'long'
+                              })}
+                            </h2>
+                            <button 
+                              className="p-2 rounded-full hover:bg-gray-100"
+                              onClick={closeDayDetails}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          
+                          {(() => {
+                            const dayData = getDaySalesData(selectedCalendarDate);
+                            
+                            if (dayData.orderCount === 0) {
+                              return (
+                                <div className="text-center py-8 text-gray-500">
+                                  해당 날짜에 주문 내역이 없습니다.
+                                </div>
+                              );
+                            }
+                            
+                            return (
+                              <>
+                                <div className="grid grid-cols-2 gap-4 mb-6">
+                                  <div className="bg-blue-50 p-4 rounded-lg">
+                                    <div className="text-sm text-gray-500 mb-1">총 매출</div>
+                                    <div className="text-xl font-bold">{dayData.sales.toLocaleString()}원</div>
+                                  </div>
+                                  <div className="bg-blue-50 p-4 rounded-lg">
+                                    <div className="text-sm text-gray-500 mb-1">주문 건수</div>
+                                    <div className="text-xl font-bold">{dayData.orderCount}건</div>
+                                  </div>
+                                </div>
+                                
+                                <h3 className="font-medium text-lg mb-3">주문 내역</h3>
+                                <div className="overflow-y-auto max-h-96">
+                                  {dayData.orders.map(order => (
+                                    <div key={order.id} className="border rounded-lg p-4 mb-3">
+                                      <div className="flex justify-between items-center mb-2">
+                                        <div className="font-medium">
+                                          {order.timestamp.toLocaleTimeString('ko-KR', { 
+                                            hour: '2-digit', 
+                                            minute: '2-digit' 
+                                          })}
+                                        </div>
+                                        <div className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                          {order.paymentMethod}
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="space-y-1 mb-3">
+                                        {order.items.map(item => (
+                                          <div key={item.id} className="flex justify-between text-sm">
+                                            <span>{item.name} × {item.quantity}</span>
+                                            <span>{(item.price * item.quantity).toLocaleString()}원</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      
+                                      {order.discount > 0 && (
+                                        <div className="flex justify-between text-sm text-red-500 border-t pt-2">
+                                          <span>할인</span>
+                                          <span>-{order.discount.toLocaleString()}원</span>
+                                        </div>
+                                      )}
+                                      
+                                      <div className="flex justify-between font-medium border-t pt-2 mt-2">
+                                        <span>합계</span>
+                                        <span>{order.finalAmount.toLocaleString()}원</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
